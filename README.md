@@ -16,7 +16,7 @@
 
 **Adapter Loguru para envio de logs ao sistema Viu (Kafka + Loki)**
 
-## ✨ Quer ver o erro? → Joga no Viu.
+## ✨ Quer ver logs? → Joga no Viu. Viu?
 
 Viu-loguru é uma biblioteca Python que integra o [Loguru](https://github.com/Delgan/loguru) com Kafka e Loki, oferecendo logging estruturado, rastreabilidade e observabilidade de alta performance para suas aplicações.
 
