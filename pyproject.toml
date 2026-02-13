@@ -1,0 +1,57 @@
+[project]
+name = "viu-loguru"
+version = "0.0.1"
+description = "Adapter Loguru para envio de logs ao Viu (Kafka + Loki)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "@mar.jr", email = "amarjr.dev@gmail.com" }
+]
+keywords = ["logging", "loguru", "kafka", "loki", "observability", "viu"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Logging",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "loguru>=0.7.0",
+    "aiokafka>=0.10.0",
+    "orjson>=3.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/amarjr-dev/viu-loguru"
+Documentation = "https://github.com/amarjr-dev/viu-loguru/wiki"
+Repository = "https://github.com/amarjr-dev/viu-loguru"
+Issues = "https://github.com/amarjr-dev/viu-loguru/issues"
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100.0", "starlette>=0.27.0"]
+django = ["django>=4.0"]
+flask = ["flask>=3.0"]
+sync = ["kafka-python>=2.0.2"]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/viu_loguru/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/viu_loguru"]
