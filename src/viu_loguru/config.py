@@ -31,6 +31,7 @@ class ViuConfig:
     Args:
         service_name: Nome do serviço/aplicação
         environment: Ambiente (development, production, etc)
+        tenant_id: ID do tenant (obrigatório para identificar os logs)
 
         # Modo de transporte (kafka ou http)
         transport_mode: Modo de envio dos logs (kafka|http)
@@ -54,6 +55,7 @@ class ViuConfig:
     """
 
     service_name: str
+    tenant_id: str = ""  # Opcional - será identificado automaticamente pela API Key
     environment: str = "development"
 
     # Modo de transporte
@@ -87,8 +89,13 @@ class ViuConfig:
         else:
             mode = TransportMode.HTTP
 
+        tenant_id = os.getenv(
+            "VIU_TENANT_ID", ""
+        )  # Opcional - identificado automaticamente pela API Key
+
         return cls(
             service_name=os.getenv("VIU_SERVICE_NAME", "unknown-service"),
+            tenant_id=tenant_id,
             environment=os.getenv("VIU_ENVIRONMENT", "development"),
             transport_mode=mode,
             # HTTP config
@@ -120,8 +127,15 @@ class ViuConfig:
         else:
             mode = TransportMode.HTTP
 
+        tenant_id = data.get("tenant_id")
+        if not tenant_id:
+            raise ValueError(
+                "tenant_id é obrigatório. Passe na configuração ou no dicionário."
+            )
+
         return cls(
             service_name=data.get("service_name", "unknown-service"),
+            tenant_id=tenant_id,
             environment=data.get("environment", "development"),
             transport_mode=mode,
             # HTTP config
