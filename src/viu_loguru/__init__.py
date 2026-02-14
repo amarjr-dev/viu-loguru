@@ -28,7 +28,7 @@ Usage:
     viu.info("Hello World")
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .config import TransportMode, ViuConfig, ViuLoguruConfig
 from .context import viu_correlation_context, viu_request_context

@@ -1,6 +1,6 @@
 [project]
 name = "viu-loguru"
-version = "0.1.0"
+version = "0.1.1"
 description = "Adapter Loguru para envio de logs ao Viu (Kafka + Loki + HTTP API)"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -26,6 +26,7 @@ dependencies = [
     "loguru>=0.7.0",
     "aiokafka>=0.10.0",
     "orjson>=3.9.0",
+    "requests>=2.31.0",
 ]
 
 [project.urls]
