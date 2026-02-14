@@ -187,6 +187,7 @@ class ViuLogger:
             "level": record["level"],
             "service": self.config.service_name,
             "environment": self.config.environment,
+            "tenantId": self.config.tenant_id,
             "message": record["message"],
             "correlation_id": correlation_id or str(uuid4()),
             "trace_id": viu_trace_id_context.get(None) or correlation_id,
@@ -269,6 +270,7 @@ class ViuLogger:
 
 def setup_viu_logger(
     service_name: str,
+    tenant_id: str,
     environment: str = "development",
     # Modo HTTP (padrão)
     transport_mode: str = "http",
@@ -286,6 +288,7 @@ def setup_viu_logger(
         # Modo HTTP (recomendado)
         viu_logger = setup_viu_logger(
             service_name="my-api",
+            tenant_id="seu-tenant-id",
             environment="production",
             transport_mode="http",
             api_url="https://api.viu.com",
@@ -295,6 +298,7 @@ def setup_viu_logger(
         # Modo Kafka
         viu_logger = setup_viu_logger(
             service_name="my-api",
+            tenant_id="seu-tenant-id",
             environment="production",
             transport_mode="kafka",
             kafka_brokers="kafka:9092",
@@ -307,6 +311,7 @@ def setup_viu_logger(
 
     config = ViuLoguruConfig(
         service_name=service_name,
+        tenant_id=tenant_id,
         environment=environment,
         transport_mode=mode,
         api_url=api_url,
