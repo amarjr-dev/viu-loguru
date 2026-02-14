@@ -4,22 +4,41 @@ ViuLogger - Classe principal para logging com Viu
 
 import threading
 from contextvars import ContextVar
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
 from uuid import uuid4
 
 import orjson
 from loguru import logger
 
-from .config import ViuLoguruConfig
+from .config import TransportMode, ViuConfig, ViuLoguruConfig
 from .kafka_producer import ViuKafkaProducer
+from .http_producer import HTTPProducer
 
 
 class ViuLogger:
     """
-    Logger Viu integrado com Loguru e Kafka
+    Logger Viu integrado com Loguru
+
+    Suporta dois modos de transporte:
+    - HTTP (modo padrão): Envia logs via API REST
+    - Kafka: Envia logs diretamente para o Kafka
 
     Usage:
-        viu_logger = ViuLogger(config=ViuLoguruConfig(service_name="my-app"))
+        # Modo HTTP (recomendado)
+        viu_logger = ViuLogger(config=ViuLoguruConfig(
+            service_name="my-app",
+            transport_mode=TransportMode.HTTP,
+            api_url="https://api.viu.com",
+            api_key="viu_live_xxx"
+        ))
+
+        # Modo Kafka (alternativo)
+        viu_logger = ViuLogger(config=ViuLoguruConfig(
+            service_name="my-app",
+            transport_mode=TransportMode.KAFKA,
+            kafka_brokers="kafka:9092",
+            kafka_topic="logs.tenant-id"
+        ))
 
         # Log simples
         viu_logger.info("User logged in", user_id="123")
@@ -34,9 +53,12 @@ class ViuLogger:
     _instance: Optional["ViuLogger"] = None
     _lock = threading.Lock()
 
-    def __init__(self, config: ViuLoguruConfig):
-        self.config = config
+    def __init__(self, config: Union[ViuLoguruConfig, ViuConfig]):
+        if isinstance(config, ViuConfig):
+            config = ViuLoguruConfig(**vars(config))
+        self.config: ViuLoguruConfig = config
         self._kafka_producer: Optional[ViuKafkaProducer] = None
+        self._http_producer: Optional[HTTPProducer] = None
         self._initialized = False
 
     @classmethod
@@ -54,8 +76,11 @@ class ViuLogger:
     def reset_instance(cls) -> None:
         """Reseta a instância singleton (útil para testes)"""
         with cls._lock:
-            if cls._instance is not None and cls._instance._kafka_producer is not None:
-                cls._instance._kafka_producer.close()
+            if cls._instance is not None:
+                if cls._instance._kafka_producer is not None:
+                    cls._instance._kafka_producer.close()
+                if cls._instance._http_producer is not None:
+                    cls._instance._http_producer.close()
             cls._instance = None
 
     def initialize(self) -> None:
@@ -63,14 +88,28 @@ class ViuLogger:
         if self._initialized:
             return
 
-        self._kafka_producer = ViuKafkaProducer(
-            brokers=self.config.kafka_brokers,
-            topic=self.config.kafka_topic,
-            username=self.config.kafka_username,
-            password=self.config.kafka_password,
-            sasl_mechanism=self.config.kafka_sasl_mechanism,
-            security_protocol=self.config.kafka_security_protocol,
-        )
+        # Inicializar o producer apropriado baseado no modo
+        if self.config.transport_mode == TransportMode.HTTP:
+            if not self.config.api_url or not self.config.api_key:
+                raise ValueError(
+                    "API URL and API Key are required for HTTP mode. "
+                    "Set api_url and api_key in config or VIU_API_URL and VIU_API_KEY env vars."
+                )
+            self._http_producer = HTTPProducer(
+                api_url=self.config.api_url,
+                api_key=self.config.api_key,
+                timeout=self.config.http_timeout,
+            )
+        else:
+            # Modo Kafka (legacy)
+            self._kafka_producer = ViuKafkaProducer(
+                brokers=self.config.kafka_brokers,
+                topic=self.config.kafka_topic,
+                username=self.config.kafka_username,
+                password=self.config.kafka_password,
+                sasl_mechanism=self.config.kafka_sasl_mechanism,
+                security_protocol=self.config.kafka_security_protocol,
+            )
 
         logger.remove()
 
@@ -94,8 +133,13 @@ class ViuLogger:
                 json_line = orjson.dumps(log_entry).decode("utf-8")
                 print(json_line)
 
-                if self._kafka_producer is not None:
-                    self._kafka_producer.send(json_line)
+                # Enviar via HTTP ou Kafka conforme modo configurado
+                if self.config.transport_mode == TransportMode.HTTP:
+                    if self._http_producer is not None:
+                        self._http_producer.send(log_entry)
+                else:
+                    if self._kafka_producer is not None:
+                        self._kafka_producer.send(json_line)
             except Exception:
                 # Fallback silencioso para stdout
                 pass
@@ -217,6 +261,8 @@ class ViuLogger:
         """Fecha conexões e limpa recursos"""
         if self._kafka_producer is not None:
             self._kafka_producer.close()
+        if self._http_producer is not None:
+            self._http_producer.close()
         logger.remove()
         self._initialized = False
 
@@ -224,6 +270,11 @@ class ViuLogger:
 def setup_viu_logger(
     service_name: str,
     environment: str = "development",
+    # Modo HTTP (padrão)
+    transport_mode: str = "http",
+    api_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    # Modo Kafka (alternativo)
     kafka_brokers: str = "localhost:9092",
     kafka_topic: str = "logs.app.raw",
     level: str = "INFO",
@@ -232,15 +283,34 @@ def setup_viu_logger(
     Função helper para setup rápido do ViuLogger
 
     Usage:
+        # Modo HTTP (recomendado)
         viu_logger = setup_viu_logger(
             service_name="my-api",
             environment="production",
+            transport_mode="http",
+            api_url="https://api.viu.com",
+            api_key="viu_live_xxx"
+        )
+
+        # Modo Kafka
+        viu_logger = setup_viu_logger(
+            service_name="my-api",
+            environment="production",
+            transport_mode="kafka",
             kafka_brokers="kafka:9092",
+            kafka_topic="logs.tenant-id"
         )
     """
+    mode = (
+        TransportMode.KAFKA if transport_mode.lower() == "kafka" else TransportMode.HTTP
+    )
+
     config = ViuLoguruConfig(
         service_name=service_name,
         environment=environment,
+        transport_mode=mode,
+        api_url=api_url,
+        api_key=api_key,
         kafka_brokers=kafka_brokers,
         kafka_topic=kafka_topic,
         level=level,
