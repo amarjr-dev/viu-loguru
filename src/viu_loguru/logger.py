@@ -3,7 +3,6 @@ ViuLogger - Classe principal para logging com Viu
 """
 
 import threading
-from contextvars import ContextVar
 from typing import Any, Callable, Dict, Optional, Union
 from uuid import uuid4
 
@@ -11,8 +10,19 @@ import orjson
 from loguru import logger
 
 from .config import TransportMode, ViuConfig, ViuLoguruConfig
-from .kafka_producer import ViuKafkaProducer
+from .context import (
+    viu_correlation_context,
+    viu_request_context,
+    viu_span_id_context,
+    viu_trace_id_context,
+)
 from .http_producer import HTTPProducer
+from .kafka_producer import ViuKafkaProducer
+from .trace_headers import (
+    detect_trace_headers_from_dict,
+    detect_trace_headers_from_env,
+    set_trace_context,
+)
 
 
 class ViuLogger:
@@ -120,14 +130,45 @@ class ViuLogger:
 
         logger.add(sink, **self.config.to_loguru_sink_config())
 
+        # Auto-detectar trace headers do ambiente
+        self.set_trace_context_from_env()
+
+        # Se não tinha correlation_id, gerar um novo
+        if not viu_correlation_context.get(None):
+            viu_correlation_context.set(str(uuid4()))
+
         self._initialized = True
+
+    def set_trace_headers(self, headers: Dict[str, str]) -> None:
+        """
+        Define headers de tracing para a requisição atual
+
+        Args:
+            headers: Dicionário com headers HTTP (case-insensitive)
+                    Ex: {'X-Correlation-ID': 'req-123', 'traceparent': '00-xxx-yyy-01'}
+        """
+        trace_info = detect_trace_headers_from_dict(headers)
+
+        if trace_info.correlation_id:
+            viu_correlation_context.set(trace_info.correlation_id)
+        if trace_info.trace_id:
+            set_trace_context(trace_info.trace_id, trace_info.span_id)
+
+    def set_trace_context_from_env(self) -> None:
+        """Define trace context a partir de variáveis de ambiente"""
+        trace_info = detect_trace_headers_from_env()
+
+        if trace_info.correlation_id:
+            viu_correlation_context.set(trace_info.correlation_id)
+        if trace_info.trace_id:
+            set_trace_context(trace_info.trace_id, trace_info.span_id)
 
     def _create_json_sink(self) -> Callable:
         """Cria sink que formata logs como JSON"""
 
         def json_sink(message: "logger.Message") -> None:
             record = self._format_record(message)
-            log_entry = self._create_log_entry(record)
+            log_entry = self._create_log_entry(record, record.get("extra", {}))
 
             try:
                 json_line = orjson.dumps(log_entry).decode("utf-8")
@@ -172,6 +213,7 @@ class ViuLogger:
             "line": record["line"],
             "function": record["function"],
             "exception": record["exception"] if record["exception"] else None,
+            "extra": record.get("extra", {}),
         }
 
     def _create_log_entry(
@@ -180,7 +222,19 @@ class ViuLogger:
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Cria entrada de log padronizada no formato Viu"""
-        correlation_id = viu_correlation_context.get(None)
+        extra = extra or {}
+
+        # Valores já foram gerados no método log()
+        correlation_id = extra.get("correlation_id", str(uuid4()))
+        trace_id = extra.get("trace_id", correlation_id)
+        span_id = extra.get("span_id")  # opcional
+
+        # Remover IDs internos do context para não duplicar (e None values)
+        context = {
+            k: v
+            for k, v in extra.items()
+            if k not in ["correlation_id", "trace_id", "span_id"] and v is not None
+        }
 
         entry = {
             "timestamp": record["timestamp"],
@@ -189,13 +243,13 @@ class ViuLogger:
             "environment": self.config.environment,
             "tenantId": self.config.tenant_id,
             "message": record["message"],
-            "correlation_id": correlation_id or str(uuid4()),
-            "trace_id": viu_trace_id_context.get(None) or correlation_id,
-            "span_id": viu_span_id_context.get(None),
+            "correlation_id": correlation_id,
+            "trace_id": trace_id,
+            "span_id": span_id,
             "module": record["module"],
             "file": record["file"],
             "line": record["line"],
-            "context": extra or {},
+            "context": context,
         }
 
         if record["exception"]:
@@ -227,8 +281,32 @@ class ViuLogger:
         if not self._initialized:
             self.initialize()
 
-        log_func = getattr(logger, level.lower(), logger.info)
-        log_func(message, exc_info=exc_info, extra=extra)
+        # Capturar contextos ANTES de passar para Loguru
+        # (necessário porque enqueue=True usa thread separada onde ContextVars não são propagados)
+        # Gerar UUIDs imediatamente ao invés de adicionar None ao extra
+        if "correlation_id" not in extra:
+            extra["correlation_id"] = viu_correlation_context.get(None) or str(uuid4())
+        if "trace_id" not in extra:
+            trace_val = viu_trace_id_context.get(None)
+            extra["trace_id"] = trace_val or extra.get("correlation_id") or str(uuid4())
+        if "span_id" not in extra:
+            span_val = viu_span_id_context.get(None)
+            extra["span_id"] = (
+                span_val or str(uuid4())[:16]
+            )  # Auto-gera se não definido
+
+        # Merge request context com extra kwargs
+        request_ctx = viu_request_context.get({})
+        extra = {**request_ctx, **extra}
+
+        # Configurar logger com depth e exception
+        log_func = logger.opt(depth=2)
+        if exc_info:
+            log_func = log_func.opt(exception=True)
+
+        # Obter método do nível correto e fazer log
+        log_method = getattr(log_func, level.lower(), log_func.info)
+        log_method(message, **extra)
 
     def debug(self, message: str, **extra: Any) -> None:
         """Log em nível DEBUG"""
@@ -325,20 +403,3 @@ def setup_viu_logger(
     viu_logger.initialize()
 
     return viu_logger
-
-
-_correlation_id_context: ContextVar[Optional[str]] = ContextVar(
-    "correlation_id", default=None
-)
-viu_correlation_context = _correlation_id_context
-
-_trace_id_context: ContextVar[Optional[str]] = ContextVar("trace_id", default=None)
-viu_trace_id_context = _trace_id_context
-
-_span_id_context: ContextVar[Optional[str]] = ContextVar("span_id", default=None)
-viu_span_id_context = _span_id_context
-
-_request_context: ContextVar[Dict[str, Any]] = ContextVar(
-    "request_context", default=None
-)
-viu_request_context = _request_context

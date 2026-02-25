@@ -28,12 +28,18 @@ Usage:
     viu.info("Hello World")
 """
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 from .config import TransportMode, ViuConfig, ViuLoguruConfig
 from .context import viu_correlation_context, viu_request_context
 from .http_producer import HTTPProducer
 from .logger import ViuLogger, setup_viu_logger
+from .trace_headers import (
+    detect_trace_headers_from_dict,
+    detect_trace_headers_from_env,
+    get_trace_context,
+    set_trace_context,
+)
 
 __all__ = [
     "__version__",
@@ -45,6 +51,11 @@ __all__ = [
     "setup_viu_logger",
     "viu_correlation_context",
     "viu_request_context",
+    # Trace headers
+    "detect_trace_headers_from_dict",
+    "detect_trace_headers_from_env",
+    "set_trace_context",
+    "get_trace_context",
 ]
 
 # Optional middleware import (requires starlette/fastapi)
