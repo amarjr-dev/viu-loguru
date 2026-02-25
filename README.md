@@ -87,6 +87,110 @@ viu = ViuLogger(config=ViuLoguruConfig(
 viu.info("Application started", version="1.2.3")
 ```
 
+## 📝 Exemplos de Uso
+
+### Níveis de Log
+
+#### INFO - Sem contexto
+```python
+viu.info("Application started")
+viu.info("User logged in successfully")
+viu.info("Database connection established")
+```
+
+#### INFO - Com contexto
+```python
+viu.info("User logged in", 
+    user_id="123", 
+    email="user@example.com",
+    login_method="oauth"
+)
+
+viu.info("Request processed",
+    method="GET",
+    path="/api/users",
+    response_time=45,
+    status_code=200
+)
+```
+
+#### ERROR - Sem contexto
+```python
+viu.error("Something went wrong")
+viu.error("Database connection failed")
+```
+
+#### ERROR - Com contexto
+```python
+try:
+    process_payment(order)
+except Exception as e:
+    viu.error("Payment processing failed",
+        error=str(e),
+        order_id=order.id,
+        amount=order.total,
+        currency="BRL",
+        user_id=order.user_id
+    )
+```
+
+#### WARNING - Sem contexto
+```python
+viu.warning("High memory usage detected")
+viu.warning("API rate limit approaching")
+```
+
+#### WARNING - Com contexto
+```python
+viu.warning("Slow query detected",
+    query="SELECT * FROM users",
+    duration=2500,
+    threshold=1000
+)
+
+viu.warning("Cache miss",
+    key="user:123",
+    operation="get_user_profile",
+    fallback="database"
+)
+```
+
+#### DEBUG - Sem contexto
+```python
+viu.debug("Entering authentication flow")
+viu.debug("Cache lookup performed")
+```
+
+#### DEBUG - Com contexto
+```python
+viu.debug("Processing request",
+    headers=request.headers,
+    body=request.body,
+    query=request.query
+)
+
+viu.debug("Database query executed",
+    sql="SELECT * FROM users WHERE id = ?",
+    params=[user_id],
+    duration=12
+)
+```
+
+#### Outros níveis
+```python
+# CRITICAL - Erros críticos que causam shutdown
+viu.critical("Critical system failure",
+    error="Out of memory",
+    free_memory=0
+)
+
+# SUCCESS - Operações bem-sucedidas (nível customizado do Loguru)
+viu.success("Deployment completed",
+    version="1.2.3",
+    environment="production"
+)
+```
+
 ### 🔐 Produção com Autenticação SASL
 
 ```python
@@ -130,6 +234,67 @@ from viu_loguru import ViuLogger, ViuLoguruConfig
 config = ViuLoguruConfig.from_env()
 viu = ViuLogger(config)
 ```
+
+## 🔗 Rastreamento e Correlation IDs
+
+O viu-loguru **gera automaticamente** IDs de rastreamento para todos os logs:
+
+### IDs Gerados Automaticamente
+
+```python
+viu.info("User action", user_id="123")
+# Gera automaticamente:
+# - correlation_id: UUID único da requisição
+# - trace_id: UUID para rastreamento distribuído
+# - span_id: UUID (16 chars) para operações individuais
+```
+
+### Ordem de Prioridade para `span_id`
+
+1. **Explícito no log**: Valor passado diretamente
+2. **Contexto manual**: Definido via `viu_span_id_context.set()`
+3. **Headers HTTP**: Extraído de `traceparent` ou `X-B3-SpanId`
+4. **Auto-geração**: UUID gerado automaticamente (padrão)
+
+### Definir Manualmente
+
+```python
+from viu_loguru.context import viu_span_id_context
+
+# Definir span_id para o contexto atual
+viu_span_id_context.set("custom-span-123")
+viu.info("Operation with custom span")
+
+# Ou passar diretamente no log
+viu.info("Specific operation", span_id="operation-456")
+```
+
+### Distributed Tracing com Hierarquia
+
+```python
+from viu_loguru.context import create_child_span
+
+# Operação pai
+viu.info("Starting parent operation")
+
+# Criar span filho (mantém hierarchia parent/child)
+child_span = create_child_span()
+viu.info("Child operation", **child_span)
+# child_span contém: span_id, parent_span_id, correlation_id, trace_id
+```
+
+### Detecção Automática de Headers HTTP
+
+```python
+# Headers W3C Trace Context ou Zipkin B3 são detectados automaticamente
+viu.set_trace_headers({
+    'traceparent': '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'
+})
+# Extrai automaticamente trace_id e span_id do header
+```
+
+**Compatibilidade**: W3C Trace Context, Zipkin B3, OpenTelemetry
+
 
 ### 🔄 Integração com FastAPI
 

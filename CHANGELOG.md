@@ -5,7 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] - 2026-02-14
+## [0.2.0] - 2026-02-25
+
+### Added
+- Auto-geração de `span_id` quando não fornecido manualmente
+- `span_id` agora é sempre incluído nos logs (16 caracteres hex)
+- Compatível com W3C Trace Context e OpenTelemetry
+
+### Changed
+- `span_id` não é mais opcional - sempre será preenchido (auto-gerado ou manual)
+- Mantém prioridade: manual > contexto > auto-geração
+
+## [0.1.5] - 2026-02-15
+
+### Fixed
+- Context (extra) agora é corretamente extraído e enviado nos logs
+- Auto-detecção de trace headers do ambiente via `set_trace_context_from_env()`
+- Geração automática de correlation_id se não existir
+- Backend agora recebe corretamente correlation_id, trace_id, span_id e context
+
+## [0.1.4] - 2026-02-15
+
+### Added
+- Suporte a campos module, file e line para o backend
+
+### Fixed
+- Backend aceita campos no formato snake_case (correlation_id, trace_id, span_id, context)
+
+## [0.1.3] - 2026-02-14
 
 ### Fixed
 - Adicionada dependência `requests` para modo HTTP
